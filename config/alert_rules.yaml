@@ -1,25 +1,38 @@
+# Ba alert symptom-based, đo trên data/logs.jsonl (cùng nguồn với dashboard).
+# Ngưỡng lấy từ config/slo.yaml (SLO + guardrails) và baseline thực tế ở CP0–CP2.
 alerts:
-  - name: TODO_alert_1
-    severity: TODO
-    condition: TODO
-    duration: TODO
+  - name: HighLatencyP95
+    severity: warning
+    condition: 'p95(latency_ms where event == "response_sent") > 3000'
+    duration: 5m
     type: symptom-based
     channel: slack
-    owner: TODO
+    slack_channel: '#k4-l3b-alerts'
+    owner: student-2A202602387
+    slo: fast_successful_requests
     runbook: docs/alerts.md#alert-1
-  - name: TODO_alert_2
-    severity: TODO
-    condition: TODO
-    duration: TODO
+  - name: HighErrorRateOrRetrievalFailing
+    severity: critical
+    condition: >-
+      count(event == "request_failed") / count(event == "request_received") * 100 > 2
+      OR count(tool_success == true) / count(tool_success != null) * 100 < 90
+    duration: 5m
     type: symptom-based
     channel: slack
-    owner: TODO
+    slack_channel: '#k4-l3b-alerts'
+    owner: student-2A202602387
+    slo: fast_successful_requests
     runbook: docs/alerts.md#alert-2
-  - name: TODO_alert_3
-    severity: TODO
-    condition: TODO
-    duration: TODO
+  - name: CostPerRequestSpike
+    severity: warning
+    # Baseline avg cost ≈ 0.0021 USD/request; 0.005 ≈ 2.4x baseline.
+    condition: >-
+      avg(cost_usd where event == "response_sent") > 0.005
+      OR projected_daily(sum(cost_usd)) > 2.5
+    duration: 10m
     type: symptom-based
     channel: slack
-    owner: TODO
+    slack_channel: '#k4-l3b-alerts'
+    owner: student-2A202602387
+    slo: guardrails.daily_cost_usd_max
     runbook: docs/alerts.md#alert-3

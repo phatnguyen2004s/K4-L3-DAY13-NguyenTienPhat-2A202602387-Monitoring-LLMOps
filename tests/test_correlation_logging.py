@@ -92,3 +92,20 @@ def test_raw_pii_never_reaches_log_file(monkeypatch, tmp_path: Path) -> None:
     for secret in ("student@vinuni.edu.vn", "090 123 4567", "001203004567", "4111 1111", "a@b.co"):
         assert secret not in raw
     assert "REDACTED_EMAIL" in raw
+
+
+def test_failed_request_returns_correlation_id(monkeypatch, tmp_path: Path) -> None:
+    from app import incidents
+
+    log_path = tmp_path / "logs.jsonl"
+    monkeypatch.setattr(logging_config, "LOG_PATH", log_path)
+    monkeypatch.setitem(incidents.STATE, "tool_fail", True)
+
+    (response,) = _chat([(_body("u1"), {})])
+
+    assert response.status_code == 500
+    cid = response.headers["x-request-id"]
+    assert response.json() == {"detail": "RuntimeError", "correlation_id": cid}
+    failed = next(e for e in _events(log_path) if e["event"] == "request_failed")
+    assert failed["correlation_id"] == cid
+    assert failed["tool_success"] is False

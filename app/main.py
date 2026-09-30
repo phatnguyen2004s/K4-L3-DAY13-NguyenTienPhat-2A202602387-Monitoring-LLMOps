@@ -14,7 +14,7 @@ from .metrics import record_error, snapshot
 from .middleware import CorrelationIdMiddleware
 from .pii import hash_user_id, summarize_text
 from .schemas import ChatRequest, ChatResponse
-from .tracing import tracing_enabled
+from .tracing import get_langfuse_client, tracing_enabled
 
 configure_logging()
 log = get_logger()
@@ -30,6 +30,11 @@ async def lifespan(_: FastAPI):
         payload={"tracing_enabled": tracing_enabled()},
     )
     yield
+    # Span được export theo batch nền; flush khi shutdown để restart/deploy
+    # không làm mất trace của các request cuối cùng.
+    if tracing_enabled():
+        get_langfuse_client().flush()
+        log.info("tracing_flushed", service="control")
 
 
 app = FastAPI(title="Day 13 Monitoring & LLMOps Lab", lifespan=lifespan)
@@ -103,7 +108,11 @@ async def chat(request: Request, body: ChatRequest) -> ChatResponse:
             tool_success=False if isinstance(exc, RuntimeError) else None,
             payload={"detail": str(exc), "message_preview": summarize_text(body.message)},
         )
-        raise HTTPException(status_code=500, detail=error_type) from exc
+        # Trả correlation_id cả khi lỗi để client/on-call tra được log và trace.
+        return JSONResponse(
+            status_code=500,
+            content={"detail": error_type, "correlation_id": request.state.correlation_id},
+        )
 
 
 @app.post("/incidents/{name}/enable")

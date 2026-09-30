@@ -7,7 +7,20 @@ primary_slo:
     total_event: 'event == "request_received"'
   target_percent: 99.5
   error_budget_percent: 0.5
-  note: Học viên phải giải thích hoặc điều chỉnh ngưỡng bằng baseline của mình. Ví dụ nếu có 10,000 request trong cửa sổ 28 ngày, error budget 0.5% nghĩa là tối đa 50 request được phép không đạt SLO.
+  note: >-
+    Giữ ngưỡng 3000ms và target 99.5% sau khi đối chiếu baseline của chính tôi (CP0–CP2, fake LLM,
+    Langfuse Cloud qua mạng chậm). Steady-state P95 ≈ 170–440ms, request lạnh phải fetch prompt
+    từ Langfuse ≈ 1.0–1.1s, nên 3000ms còn dư ~2.7x cho request lạnh mà vẫn bắt được sự cố thật
+    (ví dụ retrieval chậm +2.5s hay prompt fetch fallback 3–4s đã gặp ở CP1). Ngưỡng này trùng
+    threshold panel latency trong config/dashboard.yaml để SLO line và dashboard nói cùng một ngôn ngữ.
+    Error budget 0.5% trong 28 ngày: với 10,000 request được phép tối đa 50 request lỗi hoặc > 3000ms;
+    với workload lab ~200 request thì budget chỉ là 1 request, nên 2 request chậm ở CP1 (SLI 94.87%
+    trên 39 request) đã đốt hết budget — lý do cần alert HighLatencyP95 và prompt fetch có cache.
+  error_budget_examples:
+    - total_requests: 10000
+      allowed_bad_requests: 50
+    - total_requests: 200
+      allowed_bad_requests: 1
 guardrails:
   error_rate_pct_max: 2
   daily_cost_usd_max: 2.5
