@@ -1,0 +1,125 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Day 13 Dashboard</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<style>
+  :root { --bg:#f6f7f9; --card:#fff; --ink:#1d2330; --muted:#667085; --line:#e4e7ec;
+          --ok:#12805c; --ok-bg:#e7f6ef; --bad:#c0362c; --bad-bg:#fdecea; --na:#667085; --na-bg:#eef0f3; }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--ink); font:14px/1.4 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif; }
+  header { display:flex; flex-wrap:wrap; gap:8px 24px; align-items:baseline; padding:16px 20px; background:var(--card); border-bottom:1px solid var(--line); }
+  h1 { font-size:18px; margin:0; }
+  .meta { color:var(--muted); font-size:13px; }
+  .meta b { color:var(--ink); font-weight:600; }
+  main { display:grid; grid-template-columns:repeat(auto-fill,minmax(420px,1fr)); gap:16px; padding:16px 20px; }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:10px; padding:14px 16px; min-width:0; }
+  .head { display:flex; justify-content:space-between; align-items:center; gap:8px; }
+  h2 { font-size:15px; margin:0; }
+  .badge { font-size:12px; font-weight:600; padding:2px 8px; border-radius:999px; white-space:nowrap; }
+  .ok { color:var(--ok); background:var(--ok-bg); } .breach { color:var(--bad); background:var(--bad-bg); } .no_data { color:var(--na); background:var(--na-bg); }
+  .sub { color:var(--muted); font-size:12px; margin:4px 0 8px; }
+  .stats { display:flex; flex-wrap:wrap; gap:6px 18px; margin-bottom:8px; }
+  .stat span { display:block; color:var(--muted); font-size:11px; text-transform:uppercase; letter-spacing:.02em; }
+  .stat b { font-size:18px; font-variant-numeric:tabular-nums; }
+  .chart { position:relative; height:190px; }
+  @media (max-width:520px) { main { grid-template-columns:1fr; padding:12px; } }
+</style>
+</head>
+<body>
+<header>
+  <h1 id="title">Dashboard</h1>
+  <div class="meta">Time range: <b id="range">last 60 min</b></div>
+  <div class="meta">Auto refresh: <b id="refresh">30s</b> (next in <span id="countdown">–</span>)</div>
+  <div class="meta">Updated: <b id="updated">–</b> UTC</div>
+  <div class="meta">Source: <b id="source">data/logs.jsonl</b> · <span id="events">0</span> events</div>
+</header>
+<main id="grid"></main>
+<script>
+const COLORS = ["#2f6fdb", "#e0892b", "#8a4fd8", "#1a9c8f"];
+const THRESHOLD_COLOR = "#c0362c";
+const charts = {};
+const fmt = (v, d = 0) => v === null || v === undefined ? "–" : Number(v).toLocaleString("en-US", {maximumFractionDigits: d, minimumFractionDigits: d});
+const cumulative = (xs) => { let s = 0, seen = false; return xs.map(v => { if (v !== null) { s += v; seen = true; } return seen ? s : null; }); };
+const opLabel = (t) => `${t.aggregation} ${t.operator === "lte" ? "≤" : "≥"} ${t.value}`;
+
+function statsFor(p) {
+  const s = p.stats;
+  switch (p.id) {
+    case "latency": return [["P50 ms", fmt(s.p50)], ["P95 ms", fmt(s.p95)], ["P99 ms", fmt(s.p99)], ["TTFT P95 ms", fmt(s.ttft_p95)]];
+    case "traffic": return [["Requests", fmt(s.count)], ["Req / min", fmt(s.rate_per_minute, 2)]];
+    case "errors": {
+      const breakdown = Object.entries(s.count_by_value).map(([k, v]) => `${k}: ${v}`).join(", ") || "none";
+      return [["Error rate %", fmt(s.error_rate_pct, 2)], ["Retrieval success %", fmt(s.tool_success_rate_pct, 1)], ["By error_type", breakdown]];
+    }
+    case "cost": return [["Total USD", fmt(s.total, 4)], ["Avg / request USD", fmt(s.avg_per_request, 5)]];
+    case "tokens": return [["Input tokens", fmt(s.tokens_in)], ["Output tokens", fmt(s.tokens_out)]];
+    case "quality": return [["Mean score", fmt(s.mean, 3)]];
+  }
+}
+
+function seriesFor(p) {
+  const s = p.series;
+  switch (p.id) {
+    case "latency": return {type: "line", sets: [["P50", s.p50], ["P95", s.p95], ["P99", s.p99], ["TTFT P95", s.ttft_p95]], y: "ms"};
+    case "traffic": return {type: "bar", sets: [["Requests / min", s.requests]], y: "requests_per_minute"};
+    case "errors": return {type: "line", sets: [["Error rate %", s.error_rate_pct], ["Retrieval success %", s.tool_success_rate_pct]], y: "percent", min: 0, max: 100};
+    case "cost": return {type: "line", sets: [["Cumulative USD", cumulative(s.sum_by_minute)], ["USD / min", s.sum_by_minute]], y: "usd", min: 0};
+    case "tokens": return {type: "line", sets: [["Cumulative input", cumulative(s.tokens_in)], ["Cumulative output", cumulative(s.tokens_out)]], y: "tokens", min: 0};
+    case "quality": return {type: "line", sets: [["Mean quality", s.mean]], y: "score_0_to_1", min: 0, max: 1};
+  }
+}
+
+function render(data) {
+  document.getElementById("title").textContent = data.title;
+  document.getElementById("range").textContent = `last ${data.time_range_minutes} min`;
+  document.getElementById("refresh").textContent = `${data.refresh_seconds}s`;
+  document.getElementById("updated").textContent = data.generated_at.slice(11, 19);
+  document.getElementById("source").textContent = data.source;
+  document.getElementById("events").textContent = data.event_count;
+  const grid = document.getElementById("grid");
+
+  for (const p of data.panels) {
+    let card = document.getElementById(`card-${p.id}`);
+    if (!card) {
+      card = document.createElement("section");
+      card.className = "card"; card.id = `card-${p.id}`;
+      card.innerHTML = `<div class="head"><h2></h2><span class="badge"></span></div><div class="sub"></div><div class="stats"></div><div class="chart"><canvas></canvas></div>`;
+      grid.appendChild(card);
+    }
+    card.querySelector("h2").textContent = p.title;
+    const badge = card.querySelector(".badge");
+    badge.className = `badge ${p.status}`;
+    badge.textContent = {ok: "OK", breach: "BREACH", no_data: "NO DATA"}[p.status];
+    const decimals = {usd: 4, score_0_to_1: 3, percent: 2, requests_per_minute: 2}[p.unit] ?? 0;
+    card.querySelector(".sub").textContent = `Unit: ${p.unit} · Threshold: ${opLabel(p.threshold)} · Now: ${fmt(p.headline, decimals)}`;
+    card.querySelector(".stats").innerHTML = statsFor(p).map(([k, v]) => `<div class="stat"><span>${k}</span><b>${v}</b></div>`).join("");
+
+    const cfg = seriesFor(p);
+    const datasets = cfg.sets.map(([label, values], i) => ({
+      label, data: values, type: cfg.type, borderColor: COLORS[i], backgroundColor: COLORS[i] + (cfg.type === "bar" ? "cc" : "33"),
+      spanGaps: true, pointRadius: 2, borderWidth: 2, tension: 0.2,
+    }));
+    datasets.push({label: `Threshold (${opLabel(p.threshold)})`, data: data.minutes.map(() => p.threshold.value), type: "line",
+                   borderColor: THRESHOLD_COLOR, borderDash: [6, 4], borderWidth: 1.5, pointRadius: 0, fill: false});
+    const options = {responsive: true, maintainAspectRatio: false, animation: false,
+      plugins: {legend: {labels: {boxWidth: 10, font: {size: 11}}}},
+      scales: {x: {ticks: {maxTicksLimit: 8, font: {size: 10}}}, y: {title: {display: true, text: cfg.y}, min: cfg.min, max: cfg.max, ticks: {font: {size: 10}}}}};
+    if (charts[p.id]) { charts[p.id].data.labels = data.minutes; charts[p.id].data.datasets = datasets; charts[p.id].update(); }
+    else charts[p.id] = new Chart(card.querySelector("canvas"), {data: {labels: data.minutes, datasets}, options});
+  }
+}
+
+let refreshSeconds = 30, remaining = 0;
+async function load() {
+  try { const data = await (await fetch("/data", {cache: "no-store"})).json(); refreshSeconds = data.refresh_seconds; render(data); }
+  catch (err) { document.getElementById("updated").textContent = "load failed"; }
+  remaining = refreshSeconds;
+}
+setInterval(() => { remaining -= 1; document.getElementById("countdown").textContent = `${Math.max(remaining, 0)}s`; if (remaining <= 0) load(); }, 1000);
+load();
+</script>
+</body>
+</html>

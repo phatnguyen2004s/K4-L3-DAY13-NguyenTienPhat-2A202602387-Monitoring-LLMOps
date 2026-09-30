@@ -1,0 +1,11 @@
+# CP2 prompt versions: cùng input 'Explain why metrics traces and logs work together'
+# Dữ liệu lấy từ Langfuse GET /api/public/v2/observations (observation GENERATION của từng trace)
+
+req-b1000002 [LANGFUSE_PROMPT_LABEL=baseline] traceId=dcea7af45dec931091567d2d7b173333 prompt=day13-chat v1 label=baseline source=langfuse tokens_in=32
+req-c2000002 [LANGFUSE_PROMPT_LABEL=candidate] traceId=565c6c30c517c9a9cf03c6e9e946920b prompt=day13-chat v2 label=candidate source=langfuse tokens_in=49
+req-a1000011 [production -> v1 (trước promote)] traceId=8aa90a1777fd864b5ad41b9513d9fe96 prompt=day13-chat v1 label=production source=langfuse tokens_in=32
+req-a2000012 [production -> v2 (sau promote)] traceId=dca36b441c2978a41122dc4431cf3e2b prompt=day13-chat v2 label=production source=langfuse tokens_in=49
+req-a1000022 [production -> v1 (sau rollback)] traceId=92dd2f5eda0fcd94aa0cd0263fdd07d1 prompt=day13-chat v1 label=production source=langfuse tokens_in=32
+[2026-09-30T04:19:17+00:00] prompt 'day13-chat'
+  v1: labels=['baseline', 'production']
+  v2: labels=['candidate', 'latest']
