@@ -109,3 +109,28 @@ def test_failed_request_returns_correlation_id(monkeypatch, tmp_path: Path) -> N
     failed = next(e for e in _events(log_path) if e["event"] == "request_failed")
     assert failed["correlation_id"] == cid
     assert failed["tool_success"] is False
+
+
+def test_concurrent_requests_are_not_serialized(monkeypatch, tmp_path: Path) -> None:
+    import time
+
+    from app import incidents
+
+    monkeypatch.setattr(logging_config, "LOG_PATH", tmp_path / "logs.jsonl")
+    monkeypatch.setitem(incidents.STATE, "rag_slow", True)
+
+    async def send_concurrently() -> list[httpx.Response]:
+        transport = httpx.ASGITransport(app=app)
+        async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+            return await asyncio.gather(*(client.post("/chat", json=_body(f"u{i}")) for i in range(3)))
+
+    started = time.perf_counter()
+    responses = asyncio.run(send_concurrently())
+    elapsed = time.perf_counter() - started
+
+    assert all(r.status_code == 200 for r in responses)
+    # rag_slow thêm 2.5s/request: tuần tự sẽ ≥ 7.5s, song song chỉ ≈ 2.7s.
+    assert elapsed < 5
+    events = _events(tmp_path / "logs.jsonl")
+    assert len({e["correlation_id"] for e in events if e["event"] == "response_sent"}) == 3
+    assert all(e.get("session_id") for e in events if e["event"] == "response_sent")

@@ -3,7 +3,9 @@
 alerts:
   - name: HighLatencyP95
     severity: warning
-    condition: 'p95(latency_ms where event == "response_sent") > 3000'
+    # Cảnh báo sớm trước SLO (3000ms). Hạ từ 3000 xuống 2000 sau CP3: retrieval chậm
+    # đẩy P95 lên 2667ms (16x baseline) mà alert 3000ms không kêu; challenge dùng ngưỡng 2000ms.
+    condition: 'p95(latency_ms where event == "response_sent") > 2000'
     duration: 5m
     type: symptom-based
     channel: slack

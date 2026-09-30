@@ -40,12 +40,12 @@ Response lỗi 500 cũng trả `correlation_id` trong body và header `x-request
 - Duration: `5m`
 - Kênh thông báo: Slack `#k4-l3b-alerts`
 - SLI/SLO liên quan: SLO `fast_successful_requests` (99.5% request thành công và `latency_ms <= 3000` trong 28 ngày); panel **Latency percentiles and TTFT**.
-- Điều kiện và thời gian duy trì: `p95(latency_ms where event == "response_sent") > 3000` liên tục 5 phút.
-- Ảnh hưởng tới người dùng: nhóm 5% request chậm nhất chờ hơn 3 giây mới có câu trả lời; mỗi request > 3000ms đốt error budget (workload 200 request chỉ có budget 1 request).
+- Điều kiện và thời gian duy trì: `p95(latency_ms where event == "response_sent") > 2000` liên tục 5 phút — cảnh báo sớm dưới ngưỡng SLO 3000ms. Ban đầu đặt 3000ms; sau CP3 hạ xuống 2000ms vì sự cố retrieval chậm làm P95 tăng 16× (161 → 2667ms) nhưng không vượt 3000ms nên alert không kêu (xem `submission/REPORT.md` mục 7).
+- Ảnh hưởng tới người dùng: nhóm 5% request chậm nhất chờ hơn 2 giây; request > 3000ms đốt error budget (workload 200 request chỉ có budget 1 request). Lưu ý `latency_ms` chỉ đo thời gian trong `agent.run`; nếu handler bị chặn thì thời gian xếp hàng không nằm trong số này (CP3: log 2.67s nhưng client chờ tới 13.4s).
 - Ba bước kiểm tra đầu tiên:
   1. Dashboard: xác nhận P95/P99 vượt đường threshold từ phút nào; so TTFT P95 — TTFT bình thường mà latency tăng nghĩa là chậm nằm ngoài bước sinh token (retrieval, prompt fetch, hàng đợi).
   2. Logs: `python scripts/log_query.py --since 15 --min-latency 3000` → chọn một `correlation_id`, kiểm tra `feature`, `tokens_in/out` có bất thường không.
-  3. Traces: `python scripts/trace_lookup.py <correlation_id>` → so `latency` của `retrieval`, `prompt-resolve`, `llm-generation`. `prompt-resolve` chậm hoặc `level=WARNING` với `prompt_fetch_error` → Langfuse/mạng; `retrieval` chậm → vector store; `llm-generation` chậm với `tokens_out` cao → prompt/model.
+  3. Traces: `python scripts/trace_lookup.py <correlation_id>` → so `latency` của `retrieval`, `prompt-resolve`, `llm-generation` (baseline: retrieval ≈ 0s, prompt-resolve ≈ 0s khi cache ấm, generation ≈ 0.16s). Đồng thời so `ts` của `request_received` giữa các request đồng thời: nếu request sau chỉ bắt đầu khi request trước `response_sent` thì server đang xử lý tuần tự. `prompt-resolve` chậm hoặc `level=WARNING` với `prompt_fetch_error` → Langfuse/mạng; `retrieval` chậm → vector store; `llm-generation` chậm với `tokens_out` cao → prompt/model.
 - Mitigation tạm thời: span chậm là `prompt-resolve` → kiểm tra kết nối Langfuse, prompt vẫn phục vụ từ cache/fallback; span `retrieval` → tắt practice scenario (`python scripts/inject_incident.py --scenario rag_slow --disable`) hoặc giảm tải; generation dài bất thường sau khi đổi prompt → rollback label `production` (`python scripts/prompt_admin.py promote --version 1`, có hiệu lực sau TTL cache 60s + 1 request).
 - Owner: `student-2A202602387`
 
