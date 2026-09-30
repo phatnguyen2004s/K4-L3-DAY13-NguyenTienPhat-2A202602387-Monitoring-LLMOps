@@ -16,22 +16,33 @@ LOG_PATH = Path(os.getenv("LOG_PATH", "data/logs.jsonl"))
 class JsonlFileProcessor:
     def __call__(self, logger: Any, method_name: str, event_dict: dict[str, Any]) -> dict[str, Any]:
         LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
-        rendered = structlog.processors.JSONRenderer()(logger, method_name, event_dict)
+        # ensure_ascii=False: giữ tiếng Việt đọc/grep được thay vì escape \uXXXX.
+        rendered = structlog.processors.JSONRenderer(ensure_ascii=False)(logger, method_name, event_dict)
         with LOG_PATH.open("a", encoding="utf-8") as f:
             f.write(rendered + "\n")
         return event_dict
 
 
 
+# Field do hệ thống sinh ra, không chứa input người dùng; bỏ qua để regex PII
+# không "redact nhầm" timestamp hoặc ID (ví dụ hash toàn chữ số trùng pattern CCCD).
+SAFE_FIELDS = {"ts", "level", "correlation_id", "user_id_hash"}
+
+
+def _scrub_value(value: Any) -> Any:
+    if isinstance(value, str):
+        return scrub_text(value)
+    if isinstance(value, dict):
+        return {k: _scrub_value(v) for k, v in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_scrub_value(v) for v in value]
+    return value
+
+
 def scrub_event(_: Any, __: str, event_dict: dict[str, Any]) -> dict[str, Any]:
-    payload = event_dict.get("payload")
-    if isinstance(payload, dict):
-        event_dict["payload"] = {
-            k: scrub_text(v) if isinstance(v, str) else v for k, v in payload.items()
-        }
-    if "event" in event_dict and isinstance(event_dict["event"], str):
-        event_dict["event"] = scrub_text(event_dict["event"])
-    return event_dict
+    return {
+        k: v if k in SAFE_FIELDS else _scrub_value(v) for k, v in event_dict.items()
+    }
 
 
 
@@ -42,10 +53,10 @@ def configure_logging() -> None:
             merge_contextvars,
             structlog.processors.add_log_level,
             structlog.processors.TimeStamper(fmt="iso", utc=True, key="ts"),
-            # TODO: Register your PII scrubbing processor here
-            # scrub_event,
             structlog.processors.StackInfoRenderer(),
             structlog.processors.format_exc_info,
+            # Scrub sau khi stack/exception đã thành text, và trước khi render/ghi file.
+            scrub_event,
             JsonlFileProcessor(),
             structlog.processors.JSONRenderer(),
         ],
