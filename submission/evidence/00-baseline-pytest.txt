@@ -1,3 +1,0 @@
-$ python -m pytest -q  (CP0 baseline)
-......................                                                   [100%]
-22 passed in 0.72s

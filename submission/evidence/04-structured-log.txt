@@ -1,9 +1,0 @@
-# CP1 structured log: 1 request = request_received + response_sent, cùng correlation_id; kèm response headers
-$ curl -si -X POST localhost:8000/chat -H 'content-type: application/json' -d '{"user_id":"u_demo","session_id":"s_demo","feature":"qa","message":"How do I debug tail latency?"}'
-HTTP/1.1 200 OK
-x-request-id: req-86d6a55d
-x-response-time-ms: 3134.3
-
-$ tail -n 2 data/logs.jsonl
-{"service": "api", "payload": {"message_preview": "How do I debug tail latency?"}, "event": "request_received", "correlation_id": "req-86d6a55d", "env": "dev", "user_id_hash": "58335a0a668e", "feature": "qa", "session_id": "s_demo", "model": "claude-sonnet-4-5", "level": "info", "ts": "2026-09-30T04:05:17.586104Z"}
-{"service": "api", "latency_ms": 3131, "ttft_ms": 52, "tokens_in": 27, "tokens_out": 93, "cost_usd": 0.001476, "quality_score": 0.9, "tool_name": "retrieval", "tool_success": true, "payload": {"answer_preview": "Starter answer. You should improve this output logic and add better quality chec..."}, "event": "response_sent", "correlation_id": "req-86d6a55d", "env": "dev", "user_id_hash": "58335a0a668e", "feature": "qa", "session_id": "s_demo", "model": "claude-sonnet-4-5", "level": "info", "ts": "2026-09-30T04:05:20.718563Z"}

@@ -1,2 +1,0 @@
-$ curl /metrics after load_test.py (CP0 baseline, tracing disabled)
-{"traffic":10,"latency_p50":159.0,"latency_p95":160.0,"latency_p99":160.0,"ttft_p95":55.0,"avg_cost_usd":0.0022,"total_cost_usd":0.0216,"tokens_in_total":338,"tokens_out_total":1372,"error_breakdown":{},"quality_avg":0.88}
